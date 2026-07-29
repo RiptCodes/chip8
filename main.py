@@ -21,7 +21,7 @@ def log(text_to_log):
     pass
 
 # ROM Load
-with open("roms/test_opcode.ch8", 'rb') as f:
+with open("roms/IBM Logo.ch8", 'rb') as f:
     rom = f.read()
     memory[pc:pc + len(rom)] = rom #assigning ROM to the Memory location 0x200 - end of ROM 0xFFF
 
@@ -50,18 +50,49 @@ while running:
         if opcode == 0x00E0:
             framebuffer = [[0]*64 for _ in range(32)]
 
-        # For opcode 1nnn
-        elif (opcode & 0xF000) >> 12 == 0x1000:
+        # JUMP
+        elif (opcode & 0xF000) == 0x1000:
             pc = opcode & 0x0FFF
 
+        # Set I
+        elif (opcode & 0xF000) == 0xA000:
+            I = opcode & 0x0FFF
+
+        # set V[x]
         elif (opcode & 0xF000) == 0x6000:
-            x = (opcode & 0x0F00) >> 8
+            X = (opcode & 0x0F00) >> 8
             kk = opcode & 0x00FF
-            V[x] = kk 
+            V[X] = kk 
 
-        else:
-            print(f"unknown: {opcode:04x}")
+        # add to V[x]
+        elif (opcode & 0xF000) == 0x7000:
+            X = (opcode & 0x0F00) >> 8
+            kk = opcode & 0x00FF
+            V[X] = (V[X] + kk) & 0xFF
 
+        elif (opcode & 0xF000) == 0xD000:
+            X = (opcode & 0x0F00) >> 8
+            Y = (opcode & 0x00F0) >> 4
+            n = opcode & 0x000F
+            sprite_x = V[X]
+            sprite_y = V[Y]
+            V[0xF] = 0
+            for row in range(n):
+                byte = memory[I + row]
+                for col in range(8):
+                    bit = (byte >> (7 - col)) & 1
+                    if bit == 0:
+                        continue
+                    target_x = (sprite_x + col) % 64
+                    target_y = (sprite_y + row) % 32
+                    if framebuffer[target_y][target_x] == 1:
+                        V[0xF] = 1
+                        
+                    framebuffer[target_y][target_x] ^= bit
+        
+                else:
+                    print(f"unknown: {opcode:04x}")
+            
 
 
 
