@@ -69,7 +69,92 @@ while running:
             X = (opcode & 0x0F00) >> 8
             kk = opcode & 0x00FF
             V[X] = (V[X] + kk) & 0xFF
+        
+        # Skip an instruction
+        elif (opcode & 0xF000) == 0x3000:
+            X = (opcode & 0x0F00) >> 8
+            kk = opcode & 0x00FF
+            if V[X] == kk:
+                pc += 2 # skip the next instruction
+        
+        #skip if not equal
+        elif (opcode & 0xF000) == 0x4000:
+            X = (opcode & 0x0F00) >> 8
+            kk = opcode & 0x00FF
+            if V[X] != kk:
+                pc += 2
 
+        #skip if not equal 5xy0
+        elif (opcode & 0xF000) == 0x5000:
+            X = (opcode & 0x0F00) >> 8
+            Y = (opcode & 0x00F0) >> 4
+            if V[X] == V[Y]:
+                pc += 2
+        
+        #skip if not equal 9xy0
+        elif (opcode & 0xF000) == 0x9000:
+            X = (opcode & 0x0F00) >> 8
+            Y = (opcode & 0x00F0) >> 4
+            if V[X] != V[Y]:
+                pc += 2
+        
+        elif (opcode & 0xF000) == 0x8000:
+            X = (opcode & 0x0F00) >> 8
+            Y = (opcode & 0x00F0) >> 4
+            op = opcode & 0x000F
+            # 8xy0
+            if op == 0x0:
+                V[X] = V[Y]
+            # 8xy1
+            elif op == 0x1:
+                V[X] |= V[Y]
+            # 8xy2
+            elif op == 0x2:
+                V[X] &= V[Y]
+            # 8xy3
+            elif op == 0x3:
+                V[X] ^= V[Y]
+            # 8xy4
+            elif op == 0x4:
+                total = V[X] + V[Y]
+                V[X] = total & 0xFF
+                if total > 0xFF:
+                    V[0xF] = 1
+                else:
+                    V[0xF] = 0
+            # 8xy5
+            elif op == 0x5:
+                original_x = V[X]
+                original_y = V[Y]
+                total = V[X] - V[Y]
+                V[X] = (original_x - original_y) & 0xFF
+                if original_x > original_y:
+                    V[0xF] = 1
+                else:
+                   V[0xF] = 0  
+            # 8xy6
+            elif op == 0x6:
+                bit = V[X] & 0x01
+                V[X] >>= 1
+                V[0xF] = bit
+            # 8xy7
+            elif op == 0x7:
+                total = V[Y] - V[X]
+                V[X] = total & 0xFF
+                if V[Y] > V[X]:
+                    V[0xF] = 1
+                else:
+                   V[0xF] = 0  
+            # 8xyE
+            elif op == 0xE:
+                bit = (V[X] & 0x80) >> 7
+                V[X] = (V[X] << 1) & 0xFF
+                V[0xF] = bit
+
+
+
+
+        # showing sprite on screen
         elif (opcode & 0xF000) == 0xD000:
             X = (opcode & 0x0F00) >> 8
             Y = (opcode & 0x00F0) >> 4
@@ -87,7 +172,7 @@ while running:
                     target_y = (sprite_y + row) % 32
                     if framebuffer[target_y][target_x] == 1:
                         V[0xF] = 1
-                        
+
                     framebuffer[target_y][target_x] ^= bit
         
                 else:
