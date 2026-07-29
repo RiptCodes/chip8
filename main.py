@@ -46,10 +46,19 @@ while running:
         opcode = memory[pc] << 8 | memory[pc + 1]
         print(f"{opcode:04x}")
         pc += 2
+        # For opcode 00E0
         if opcode == 0x00E0:
             framebuffer = [[0]*64 for _ in range(32)]
-        elif (opcode & 0xF000) >> 12 == 0x1:
+
+        # For opcode 1nnn
+        elif (opcode & 0xF000) >> 12 == 0x1000:
             pc = opcode & 0x0FFF
+
+        elif (opcode & 0xF000) == 0x6000:
+            x = (opcode & 0x0F00) >> 8
+            kk = opcode & 0x00FF
+            V[x] = kk 
+
         else:
             print(f"unknown: {opcode:04x}")
 
