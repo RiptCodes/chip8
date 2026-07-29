@@ -49,9 +49,17 @@ while running:
         # For opcode 00E0
         if opcode == 0x00E0:
             framebuffer = [[0]*64 for _ in range(32)]
+        
+        elif opcode == 0x00EE:
+            pc = stack.pop()
 
         # JUMP
         elif (opcode & 0xF000) == 0x1000:
+            pc = opcode & 0x0FFF
+
+        # push to stack
+        elif (opcode & 0xF000) == 0x2000:
+            stack.append(pc)
             pc = opcode & 0x0FFF
 
         # Set I
@@ -126,7 +134,6 @@ while running:
             elif op == 0x5:
                 original_x = V[X]
                 original_y = V[Y]
-                total = V[X] - V[Y]
                 V[X] = (original_x - original_y) & 0xFF
                 if original_x > original_y:
                     V[0xF] = 1
@@ -139,9 +146,10 @@ while running:
                 V[0xF] = bit
             # 8xy7
             elif op == 0x7:
-                total = V[Y] - V[X]
-                V[X] = total & 0xFF
-                if V[Y] > V[X]:
+                original_x = V[X]
+                original_y = V[Y]
+                V[X] = (original_y - original_x) & 0xFF
+                if original_y > original_x:
                     V[0xF] = 1
                 else:
                    V[0xF] = 0  
@@ -150,8 +158,6 @@ while running:
                 bit = (V[X] & 0x80) >> 7
                 V[X] = (V[X] << 1) & 0xFF
                 V[0xF] = bit
-
-
 
 
         # showing sprite on screen
@@ -174,10 +180,9 @@ while running:
                         V[0xF] = 1
 
                     framebuffer[target_y][target_x] ^= bit
-        
-                else:
-                    print(f"unknown: {opcode:04x}")
-            
+                    
+        else:
+            print(f"unknown: {opcode:04x}")
 
 
 
