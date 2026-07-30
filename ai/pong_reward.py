@@ -8,7 +8,7 @@ def find_positions(obs):
     paddle_y = paddle_rows.mean() if len(paddle_rows) else None
 
     # ball = anything in the field once paddles and score digits are masked out
-    field = obs[:, 2:62].astype(np.uint8).copy()
+    field = obs[:, 2:63].astype(np.uint8).copy()
     field[0:6, 10:50] = 0
     ball_pos = np.argwhere(field)
     if len(ball_pos):
