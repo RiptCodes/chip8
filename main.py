@@ -1,12 +1,28 @@
 # Attempting to make a chip 8 emulator with additional improvements and features without going over memory budget
+import sys
 import pygame
 import random
+import numpy as np
 
 SCALE = 10
 
+pygame.mixer.pre_init(frequency=22050, size=-16, channels=1, buffer=512)
 pygame.init()
+
 screen = pygame.display.set_mode((640, 320))
 clock = pygame.time.Clock()
+
+# Sound
+sample_rate = 22050
+freq = 440
+duration = 1.0
+amplitude = 4000
+n_samples = int(sample_rate * duration)
+t = np.arange(n_samples)
+wave = (amplitude * np.sign(np.sin(2 * np.pi * freq * t / sample_rate))).astype(np.int16)
+wave = np.column_stack([wave, wave])
+beep_sound = pygame.sndarray.make_sound(wave)
+
 running = True
 
 # CPU / Memory
@@ -17,8 +33,10 @@ pc = 0x200
 stack = []
 delay_timer = 0
 sound_timer = 0
+is_beeping = False
 waiting_for_key = False
 waiting_register = 0
+
 
 # log message
 def log(text_to_log):
@@ -68,13 +86,25 @@ FONT = bytes([
     0xF0, 0x80, 0xF0, 0x80, 0x80,
 ])
 
+# Themes
+THEMES = [
+    ("phosphor", (0, 0, 0),     (0, 255, 65)),
+    ("amber",    (0, 0, 0),     (255, 176, 0)),
+    ("gameboy",  (155, 188, 15),(15, 56, 15)),
+    ("ibm",      (30, 30, 60),  (200, 220, 255)),
+]
+theme_idx = 0
 
 
 # loading Fonts
 memory[0x50:0x50 + len(FONT)] = FONT
 
 # ROM Load
-with open("roms/Keypad.ch8", 'rb') as f:
+if len(sys.argv) > 1:
+    rom_path = sys.argv[1]
+else:
+    rom_path = "roms/Pong.ch8"
+with open(rom_path, 'rb') as f:
     rom = f.read()
     memory[pc:pc + len(rom)] = rom #assigning ROM to the Memory location 0x200 - end of ROM 0xFFF
 
@@ -93,15 +123,26 @@ while running:
             running = False
         elif event.type == pygame.KEYDOWN:
             if waiting_for_key and event.key in KEYMAP:
-                V[waiting_register] = KEYMAP [event.key]
+                V[waiting_register] = KEYMAP[event.key]
                 waiting_for_key = False
+            if event.key == pygame.K_TAB:
+                theme_idx = (theme_idx + 1) % len(THEMES)
 
-    screen.fill("black")
+    name, bg, fg = THEMES[theme_idx]
+
+    screen.fill(bg)
 
     if delay_timer > 0:
         delay_timer -= 1
     if sound_timer > 0:
         sound_timer -= 1
+    if sound_timer > 0 and not is_beeping:
+        beep_sound.play(loops=-1)
+        is_beeping = True
+    elif sound_timer == 0 and is_beeping:
+        beep_sound.stop()
+        is_beeping = False
+
 
     keys = pygame.key.get_pressed()
     chip8_keys = {chip8_key for pyk, chip8_key in KEYMAP.items() if keys[pyk]}
@@ -299,7 +340,7 @@ while running:
     for y in range(0,32):
         for x in range(0,64):
             if framebuffer[y][x] == 1:
-                pygame.draw.rect(screen, (0,255,0), (x * SCALE, y * SCALE, SCALE, SCALE))
+                pygame.draw.rect(screen, fg, (x * SCALE, y * SCALE, SCALE, SCALE))
 
 
     pygame.display.flip()
