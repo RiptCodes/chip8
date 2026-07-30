@@ -12,6 +12,7 @@ class Settings:
     music_volume: float = 0.3
     beep_volume: float = 0.2
     crt_enabled: bool = False
+    quirks_profile: str = "schip"
 
     def save(self):
         with open(SETTINGS_FILE, "w") as f:

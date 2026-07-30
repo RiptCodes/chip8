@@ -56,15 +56,18 @@ def run_game(chip, screen, beeper, renderer, music, settings, crt):
         # tick timers + step CPU
         chip.tick_timers()
         if not paused:
+            chip.drew = False
             for _ in range(settings.cycles_per_frame):
                 if chip.waiting_for_key:
                     break
                 chip.step()
+                if chip.drew and chip.quirks["display_wait"]:
+                    break
 
         # audio + render
         music.update()
         beeper.update(chip.sound_timer)
-        renderer.draw(chip.framebuffer, THEMES[settings.theme_idx], chip.high_res)
+        renderer.draw(chip.planes, THEMES[settings.theme_idx], chip.high_res)
 
         if settings.crt_enabled:
             crt.apply(screen)
@@ -95,11 +98,11 @@ def main():
 
     # --- optional shortcut: python main.py roms/pong.ch8 → skip menu ---
     if len(sys.argv) > 1:
-        chip = Chip8()
+        chip = Chip8(settings.quirks_profile)
         chip.load_rom(sys.argv[1])
         splash(screen, os.path.basename(chip.rom_path))
         pygame.display.set_caption(f"chip8 — {os.path.basename(chip.rom_path)}")
-        run_game(chip, screen, beeper, renderer, music, settings)
+        run_game(chip, screen, beeper, renderer, music, settings, crt)
         settings.save()
         pygame.quit()
         return
@@ -124,7 +127,7 @@ def main():
             rom_path = run_rom_picker(screen, roms, settings)
             if rom_path is None:
                 continue
-            chip = Chip8()
+            chip = Chip8(settings.quirks_profile)
             chip.load_rom(rom_path)
             pygame.display.set_caption(f"chip8 — {os.path.basename(rom_path)}")
             beeper.stop()

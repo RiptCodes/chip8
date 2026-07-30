@@ -17,12 +17,15 @@ def _init_fonts():
         HINT_FONT = pygame.font.SysFont("Consolas", 14)
 
 
+PROFILES = ["schip", "chip-8", "xo-chip"]
+
 SETTING_ROWS = [
     ("Theme",          lambda s: s.theme_idx,        lambda s, v: setattr(s, "theme_idx", v % len(THEMES)),          1,   lambda s: THEMES[s.theme_idx][0]),
     ("Cycles / frame", lambda s: s.cycles_per_frame, lambda s, v: setattr(s, "cycles_per_frame", max(1, min(100, v))), 1,   lambda s: str(s.cycles_per_frame)),
     ("Music volume",   lambda s: s.music_volume,     lambda s, v: setattr(s, "music_volume", max(0.0, min(1.0, v))),  0.1, lambda s: f"{s.music_volume:.1f}"),
     ("Beep volume",    lambda s: s.beep_volume,      lambda s, v: setattr(s, "beep_volume", max(0.0, min(1.0, v))),   0.1, lambda s: f"{s.beep_volume:.1f}"),
     ("CRT effect",     lambda s: s.crt_enabled,      lambda s, v: setattr(s, "crt_enabled", bool(v)),                1,   lambda s: "on" if s.crt_enabled else "off"),
+    ("Quirks",         lambda s: PROFILES.index(s.quirks_profile) if s.quirks_profile in PROFILES else 0, lambda s, v: setattr(s, "quirks_profile", PROFILES[v % len(PROFILES)]), 1, lambda s: s.quirks_profile),
 ]
 
 
@@ -43,15 +46,26 @@ def _draw_list(screen, title, entries, selected, hint, theme):
     title_surf = TITLE_FONT.render(title, True, fg)
     screen.blit(title_surf, (screen.get_width() // 2 - title_surf.get_width() // 2, 40))
 
-    y = 130
-    visible = 10
+    # fit as many rows as the space between title and hint allows, scroll around selection
+    y = 100
+    step = 28
+    visible = max(1, (screen.get_height() - 40 - y) // step)
     start = max(0, min(len(entries) - visible, selected - visible // 2))
     for i in range(start, min(len(entries), start + visible)):
         color = fg if i == selected else dim
         prefix = "> " if i == selected else "  "
         surf = ITEM_FONT.render(prefix + entries[i], True, color)
         screen.blit(surf, (screen.get_width() // 2 - 120, y))
-        y += 32
+        y += step
+
+    # scroll arrows when the list continues off-screen
+    if start > 0:
+        up = HINT_FONT.render("...", True, dim)
+        screen.blit(up, (screen.get_width() // 2 - up.get_width() // 2, 86))
+    if start + visible < len(entries):
+        down = HINT_FONT.render("...", True, dim)
+        screen.blit(down, (screen.get_width() // 2 - down.get_width() // 2,
+                           screen.get_height() - 42))
 
     hint_surf = HINT_FONT.render(hint, True, dim)
     screen.blit(hint_surf, (screen.get_width() // 2 - hint_surf.get_width() // 2,
@@ -145,17 +159,21 @@ def run_settings(screen, settings, beeper, music):
 
         screen.fill(bg)
         title = TITLE_FONT.render("SETTINGS", True, fg)
-        screen.blit(title, (screen.get_width() // 2 - title.get_width() // 2, 40))
+        screen.blit(title, (screen.get_width() // 2 - title.get_width() // 2, 30))
 
-        y = 130
-        for i, (label, _, _, _, fmt) in enumerate(SETTING_ROWS):
+        y = 90
+        step = 28
+        visible = max(1, (screen.get_height() - 40 - y) // step)
+        start = max(0, min(len(SETTING_ROWS) - visible, selected - visible // 2))
+        for i in range(start, min(len(SETTING_ROWS), start + visible)):
+            label, _, _, _, fmt = SETTING_ROWS[i]
             color = fg if i == selected else dim
             prefix = "> " if i == selected else "  "
             value = "< {} >".format(fmt(settings)) if i == selected else fmt(settings)
             row = f"{prefix}{label:<16} {value}"
             surf = ITEM_FONT.render(row, True, color)
             screen.blit(surf, (screen.get_width() // 2 - 200, y))
-            y += 34
+            y += step
 
         hint = HINT_FONT.render("up/down select   left/right change   enter save & back",
                                  True, dim)
