@@ -1,6 +1,6 @@
 # CHIP-8
 
-A CHIP-8 emulator written in Python, faithful to Cowgod's spec, with a full menu, live settings, colour themes, background music, and a boot splash. Runs the classic ROMs (Pong, Tetris, Space Invaders, Brix) and passes the Timendus test suite.
+A CHIP-8, SUPER-CHIP and XO-CHIP emulator written in Python, faithful to Cowgod's spec, with a full menu, live settings, colour themes, background music, and a boot splash. Runs the classic ROMs (Pong, Tetris, Space Invaders, Brix), passes the Timendus test suite, and doubles as a headless RL environment: it ships with a PPO agent that plays Pong and a neuroevolution setup that learns Snake by reading the screen.
 
 ![demo](chip8-demo.gif)
 
@@ -15,7 +15,20 @@ A CHIP-8 emulator written in Python, faithful to Cowgod's spec, with a full menu
 - Background music playlist (drop `.ogg` or `.mp3` files in `music/`)
 - Boot splash, main menu, ROM picker, and a persistent settings screen (`settings.json`)
 - Pause and hot-reset
+- Full SUPER-CHIP support: 128x64 hi-res mode, 16x16 sprites, scroll instructions, hi-res font
+- XO-CHIP support: 64KB memory, the 4-byte `F000` long instruction, dual display planes (4 colours), scroll-up, register-range save/load
+- Configurable quirks system (chip-8 / schip / xo-chip profiles), switchable from settings
+- CRT shader effect (scanlines + vignette), toggle with F1
 - Pytest suite covering the tricky opcodes (BCD, arithmetic carry, sprite collision, sub-with-borrow)
+
+## AI
+
+The CPU has no pygame or I/O in it, so it runs headless at ~27,000 frames/sec on one core. `chip8/env.py` wraps it in a gym-style interface, and the agents play real ROMs by reading the framebuffer, the same way a person reads the screen.
+
+- **Pong** (`ai/train_pong.py`): PPO via stable-baselines3, 8 emulators in parallel. The trained agent went 24,000 evaluation frames without conceding, and `ai/watch.py` runs it against a mirrored copy of itself, one network driving both paddles.
+- **Snake** (`ai/snake_evolve.py`): neuroevolution, no gradients. A population of 120 small networks plays `snake.ch8`, the best breed, repeat until the record stalls. `ai/snake_watch_top.py` opens the current top 20 in separate windows, resetting on death and hot-reloading newer generations while training runs.
+
+Reading state off the screen is the interesting part: the ROMs erase sprites by XOR-redrawing them, so the ball blinks, the snake's length flickers, and the game-over screen is just a wall of pixels to recognise. All of that is handled with persistence tracking in the env wrappers.
 
 ## Install
 
@@ -79,8 +92,16 @@ chip8/
 ├── font.py        # 16 hex-digit font sprites at memory 0x50
 ├── intro.py       # boot splash animation
 ├── menu.py        # main menu, ROM picker, settings screen
-└── settings.py    # Settings dataclass with JSON persistence
+├── settings.py    # Settings dataclass with JSON persistence
+├── crt.py         # scanline + vignette overlay
+└── env.py         # headless gym-style RL environment
 main.py            # frontend: pygame setup + state machine
+ai/
+├── train_pong.py  # PPO training + the PongGym wrapper
+├── watch.py       # trained agent plays Pong (AI vs AI, mirrored)
+├── snake_env.py   # screen-reading env for snake.ch8
+├── snake_evolve.py# genetic algorithm over the emulator
+└── snake_watch_top.py  # top 20 snakes, one window each
 tests/
 └── test_cpu.py    # pytest suite for the CPU
 ```
