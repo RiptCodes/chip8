@@ -9,6 +9,8 @@ Two things the screen makes awkward, both handled here:
   - one game move takes ~50 cpu cycles, so a step is sized to match and the
     agent acts once per move instead of five times
 """
+from collections import deque
+
 import numpy as np
 
 from chip8.env import Chip8Env
@@ -58,6 +60,10 @@ class SnakeEnv:
         self.max_moves = max_moves
 
     def reset(self):
+        # step() halves cycles_per_step for mid-move sampling; put it back
+        # or every boot after the first runs at half speed and never
+        # clears the title screen
+        self.env.cycles_per_step = CYCLES_PER_MOVE
         self.env.reset()
         for _ in range(BOOT_STEPS):
             self.env.step(1)          # any key clears the title screen
@@ -71,12 +77,16 @@ class SnakeEnv:
         self.best_life = 0
         self.game_over = False
         self.heading = UP
+        self._len_hist = deque(maxlen=4)
         self._read()
         return self.features()
 
-    def _read(self):
+    def _read(self, extra=None):
         obs = self.env._obs()
-        pts = [tuple(p) for p in np.argwhere(obs)]
+        pts = set(tuple(p) for p in np.argwhere(obs))
+        if extra is not None:
+            pts |= extra
+        pts = list(pts)
         # the game-over screen is a wall of text; nothing else lights up
         # this many pixels, so it is the cleanest death signal available
         self.game_over = len(pts) > 60
@@ -110,7 +120,8 @@ class SnakeEnv:
         elif self.head is None:
             self.head = min(body)
         self.body = body
-        self.length = len(body)
+        self._len_hist.append(len(body))
+        self.length = max(self._len_hist)
 
     def step(self, action):
         """action: 0 straight, 1 turn left, 2 turn right."""
@@ -121,8 +132,14 @@ class SnakeEnv:
             self.heading = (self.heading - 1) % 4
         elif action == 2:
             self.heading = (self.heading + 1) % 4
+
+        # split the move in two so the body can be sampled either side of a
+        # redraw and unioned; a single sample lies about the length
+        self.env.cycles_per_step = CYCLES_PER_MOVE // 2
         self.env.step(HEADING_TO_ACTION[self.heading])
-        self._read()
+        mid = set(tuple(p) for p in np.argwhere(self.env._obs()))
+        self.env.step(HEADING_TO_ACTION[self.heading])
+        self._read(extra=mid)
         self.moves += 1
 
         died = self.game_over or (prev_len > 7 and self.length <= prev_len - 3)
@@ -142,7 +159,7 @@ class SnakeEnv:
                 after = self._dist(self.head, self.food)
                 reward += 0.1 if after < before else -0.1
 
-        done = self.moves >= self.max_moves or self.stale > 150
+        done = self.moves >= self.max_moves or self.stale > 100
         return self.features(), reward, done, {"length": self.length, "died": False}
 
     @staticmethod

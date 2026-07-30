@@ -22,7 +22,8 @@ ELITE = 12
 TOURNAMENT = 4
 MUTATION_RATE = 0.1
 MUTATION_SCALE = 0.4
-MAX_MOVES = 700
+MAX_MOVES = 3000
+STALL_LIMIT = 250   # stop only after this many generations with no new record
 
 
 def genome_size(layers=LAYERS):
@@ -59,20 +60,42 @@ def evaluate(genome):
     best = 0
     for _ in range(GAMES_PER_BRAIN):
         length, moves = play(genome)
-        total += length * 1000 + moves
+        # length dominates; the move penalty makes fast eating beat loitering.
+        # (+ moves used to be a survival tiebreak, but it paid snakes to
+        # circle the apple farming step count)
+        total += length * 1000 - moves * 0.2
         best = max(best, length)
     return total / GAMES_PER_BRAIN, best
 
 
-def run(generations=120, seed=0):
+def run(generations=None, seed=0):
+    """generations=None runs until the record stalls for STALL_LIMIT gens."""
+    import os
+    os.makedirs("ai/top_snakes", exist_ok=True)
     rng = np.random.default_rng(seed)
     pop = [rng.normal(0, 1, GENOME_SIZE).astype(np.float32)
            for _ in range(POPULATION)]
+    # warm start: seed with any survivors from a previous run
+    saved = sorted(f for f in os.listdir("ai/top_snakes") if f.endswith(".npy"))
+    for i, f in enumerate(saved[:20]):
+        g = np.load(os.path.join("ai/top_snakes", f))
+        if g.shape == (GENOME_SIZE,):
+            pop[i] = g.astype(np.float32)
+    if saved:
+        print(f"warm-started with {min(len(saved), 20)} saved genomes")
     best_genome, record = None, 0
+    last_improve = 0
     started = time.time()
 
     with mp.Pool() as pool:
-        for gen in range(generations):
+        gen = -1
+        while True:
+            gen += 1
+            if generations is not None and gen >= generations:
+                break
+            if generations is None and gen - last_improve >= STALL_LIMIT:
+                print(f"stalled: no record improvement for {STALL_LIMIT} generations")
+                break
             results = pool.map(evaluate, pop)
             fits = [r[0] for r in results]
             lens = [r[1] for r in results]
@@ -82,8 +105,14 @@ def run(generations=120, seed=0):
                 record = lens[order[0]]
                 best_genome = pop[order[0]].copy()
                 np.save("ai/snake_best.npy", best_genome)
+                last_improve = gen
 
-            if gen % 5 == 0 or gen == generations - 1:
+            # keep the current top 20 on disk so they can be watched mid-run
+            if gen % 20 == 0:
+                for rank, i in enumerate(order[:20]):
+                    np.save(f"ai/top_snakes/rank_{rank:02}.npy", pop[i])
+
+            if gen % 5 == 0:
                 print(f"gen {gen:3}  best len {lens[order[0]]:3}  "
                       f"mean fit {np.mean(fits):7.0f}  record {record:3}  "
                       f"{time.time() - started:5.0f}s", flush=True)
@@ -104,4 +133,4 @@ def run(generations=120, seed=0):
 
 
 if __name__ == "__main__":
-    run(int(sys.argv[1]) if len(sys.argv) > 1 else 120)
+    run(int(sys.argv[1]) if len(sys.argv) > 1 else None)
