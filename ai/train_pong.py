@@ -26,13 +26,19 @@ ROM = "roms/Pong-train.ch8"
 GONE_FRAMES = 6      # ball must be missing this long to count as out of play
 
 
+def _fold(y):
+    # reflect a projected y off the top (0) and bottom (31) walls
+    p = y % 62.0
+    return p if p <= 31.0 else 62.0 - p
+
+
 class PongGym(gym.Env):
     def __init__(self):
         super().__init__()
         self.env = Chip8Env(ROM, actions=[set(), {0x1}, {0x4}],
                             cycles_per_step=10, max_steps=3000)
         self.action_space = spaces.Discrete(3)
-        self.observation_space = spaces.Box(-1.0, 1.0, shape=(4,), dtype=np.float32)
+        self.observation_space = spaces.Box(-1.0, 1.0, shape=(5,), dtype=np.float32)
         self._reset_tracking()
 
     def _reset_tracking(self):
@@ -40,6 +46,7 @@ class PongGym(gym.Env):
         self.ball_y = None
         self.ball_dx = 0.0
         self.ball_dy = 0.0
+        self.intercept_y = None  # projected y where the ball crosses our column
         self.missing = 999
 
     def _track_ball(self, obs):
@@ -58,9 +65,16 @@ class PongGym(gym.Env):
                     self.ball_dx = dx
                 if dy != 0:
                     self.ball_dy = dy
+                # project where the ball will cross our paddle column
+                if self.ball_dx < 0:
+                    t = (bx - 1.0) / -self.ball_dx
+                    self.intercept_y = _fold(by + self.ball_dy * t)
+                else:
+                    self.intercept_y = None
             else:
                 self.ball_dx = 0.0
                 self.ball_dy = 0.0
+                self.intercept_y = None
             self.ball_x = bx
             self.ball_y = by
             self.missing = 0
@@ -69,18 +83,24 @@ class PongGym(gym.Env):
             if self.missing == GONE_FRAMES and self.ball_x is not None:
                 # ball stayed gone: a point was scored on whichever side it exited
                 if self.ball_dx < 0 and self.ball_x < 12:
-                    bonus = -5.0
+                    bonus = -10.0
                 self.ball_x = None
                 self.ball_y = None
+                self.intercept_y = None
         return bonus
 
     def _features(self, obs):
         _, _, paddle_y = find_positions(obs)
         py = paddle_y / 32.0 if paddle_y is not None else -1.0
         if self.ball_x is None:
-            return np.array([py, -1.0, -1.0, 0.0], dtype=np.float32)
+            return np.array([py, -1.0, -1.0, 0.0, 0.0], dtype=np.float32)
         dy = max(-1.0, min(1.0, self.ball_dy / 4.0))
-        return np.array([py, self.ball_x / 64.0, self.ball_y / 32.0, dy],
+        if self.intercept_y is not None and paddle_y is not None:
+            # the answer feature: signed distance from paddle to intercept point
+            delta = max(-1.0, min(1.0, (self.intercept_y - paddle_y) / 16.0))
+        else:
+            delta = 0.0
+        return np.array([py, self.ball_x / 64.0, self.ball_y / 32.0, dy, delta],
                         dtype=np.float32)
 
     def _opponent_keys(self, obs):
@@ -96,10 +116,15 @@ class PongGym(gym.Env):
         return set()
 
     def _shaped(self, obs):
+        # shape toward the predicted intercept when the ball is incoming,
+        # otherwise toward the ball itself
         _, _, paddle_y = find_positions(obs)
-        if self.ball_y is None or paddle_y is None:
+        if paddle_y is None:
             return 0.0
-        return 1.0 - abs(self.ball_y - paddle_y) / 32.0
+        target = self.intercept_y if self.intercept_y is not None else self.ball_y
+        if target is None:
+            return 0.0
+        return 1.0 - abs(target - paddle_y) / 32.0
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -131,11 +156,12 @@ class PongGym(gym.Env):
 
 
 if __name__ == "__main__":
-    steps = int(sys.argv[1]) if len(sys.argv) > 1 else 500_000
+    steps = int(sys.argv[1]) if len(sys.argv) > 1 else 1_000_000
     env = PongGym()
     model = DQN("MlpPolicy", env, verbose=1,
-                learning_rate=1e-3, buffer_size=50_000,
-                exploration_fraction=0.3)
+                learning_rate=5e-4, buffer_size=100_000,
+                exploration_fraction=0.2,
+                policy_kwargs={"net_arch": [128, 128]})
     model.learn(total_timesteps=steps)
     model.save("ai/pong_dqn")
     print("saved to ai/pong_dqn.zip")
