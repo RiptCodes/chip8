@@ -11,9 +11,10 @@ from chip8.music import MusicPlayer
 from chip8.intro import splash
 from chip8.menu import scan_roms, run_main_menu, run_rom_picker, run_settings
 from chip8.settings import Settings
+from chip8.crt import CRT
 
 
-def run_game(chip, screen, beeper, renderer, music, settings):
+def run_game(chip, screen, beeper, renderer, music, settings, crt):
     """Run one ROM. Returns True to go back to menu, False to quit entirely."""
     paused = False
     clock = pygame.time.Clock()
@@ -46,6 +47,8 @@ def run_game(chip, screen, beeper, renderer, music, settings):
                 elif event.key == pygame.K_RIGHTBRACKET:
                     settings.music_volume = min(1.0, settings.music_volume + 0.1)
                     music.set_volume(settings.music_volume)
+                elif event.key == pygame.K_F1:
+                    settings.crt_enabled = not settings.crt_enabled
 
         # feed current keypad state into the CPU
         keys = pygame.key.get_pressed()
@@ -64,6 +67,9 @@ def run_game(chip, screen, beeper, renderer, music, settings):
         beeper.update(chip.sound_timer)
         renderer.draw(chip.framebuffer, THEMES[settings.theme_idx])
 
+        if settings.crt_enabled:
+            crt.apply(screen)
+
         pygame.display.flip()
         clock.tick(60)
 
@@ -80,6 +86,7 @@ def main():
     beeper.sound.set_volume(settings.beep_volume)
     renderer = Renderer(screen)
     music = MusicPlayer(folder="music", volume=settings.music_volume)
+    crt = CRT(64 * SCALE, 32 * SCALE)
 
     roms = scan_roms("roms")
     if not roms:
@@ -123,7 +130,7 @@ def main():
             pygame.display.set_caption(f"chip8 — {os.path.basename(rom_path)}")
             if hasattr(beeper, "stop"):
                 beeper.stop()
-            if not run_game(chip, screen, beeper, renderer, music, settings):
+            if not run_game(chip, screen, beeper, renderer, music, settings, crt):
                 break
 
     settings.save()

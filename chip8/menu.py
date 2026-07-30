@@ -22,6 +22,7 @@ SETTING_ROWS = [
     ("Cycles / frame", lambda s: s.cycles_per_frame, lambda s, v: setattr(s, "cycles_per_frame", max(1, min(100, v))), 1,   lambda s: str(s.cycles_per_frame)),
     ("Music volume",   lambda s: s.music_volume,     lambda s, v: setattr(s, "music_volume", max(0.0, min(1.0, v))),  0.1, lambda s: f"{s.music_volume:.1f}"),
     ("Beep volume",    lambda s: s.beep_volume,      lambda s, v: setattr(s, "beep_volume", max(0.0, min(1.0, v))),   0.1, lambda s: f"{s.beep_volume:.1f}"),
+    ("CRT effect",     lambda s: s.crt_enabled,      lambda s, v: setattr(s, "crt_enabled", bool(v)),                1,   lambda s: "on" if s.crt_enabled else "off"),
 ]
 
 

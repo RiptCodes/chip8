@@ -11,6 +11,7 @@ class Settings:
     cycles_per_frame: int = 10
     music_volume: float = 0.3
     beep_volume: float = 0.2
+    crt_enabled: bool = False
 
     def save(self):
         with open(SETTINGS_FILE, "w") as f:
