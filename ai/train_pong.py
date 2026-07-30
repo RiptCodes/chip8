@@ -35,12 +35,14 @@ def _fold(y):
 
 
 class PongGym(gym.Env):
-    def __init__(self):
+    def __init__(self, opponent_model=None):
         super().__init__()
         self.env = Chip8Env(ROM, actions=[set(), {0x1}, {0x4}],
                             cycles_per_step=10, max_steps=3000)
         self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(-1.0, 1.0, shape=(5,), dtype=np.float32)
+        # None = scripted right paddle; a model = same policy plays both sides
+        self.opponent_model = opponent_model
         self._reset_tracking()
 
     def _reset_tracking(self):
@@ -48,7 +50,9 @@ class PongGym(gym.Env):
         self.ball_y = None
         self.ball_dx = 0.0
         self.ball_dy = 0.0
-        self.intercept_y = None  # projected y where the ball crosses our column
+        self.intercept_y = None        # projected y at the left paddle's column
+        self.intercept_right = None    # projected y at the right paddle's column
+        self.right_y = None            # right paddle, persisted through blinks
         self.missing = 999
 
     def _track_ball(self, obs):
@@ -70,16 +74,20 @@ class PongGym(gym.Env):
                     self.ball_dx = dx
                 if dy != 0:
                     self.ball_dy = dy
-                # project where the ball will cross our paddle column
+                # project where the ball will cross each paddle's column
                 if self.ball_dx < 0:
                     t = (bx - 1.0) / -self.ball_dx
                     self.intercept_y = _fold(by + self.ball_dy * t)
-                else:
+                    self.intercept_right = None
+                elif self.ball_dx > 0:
+                    t = (62.0 - bx) / self.ball_dx
+                    self.intercept_right = _fold(by + self.ball_dy * t)
                     self.intercept_y = None
             else:
                 self.ball_dx = 0.0
                 self.ball_dy = 0.0
                 self.intercept_y = None
+                self.intercept_right = None
             self.ball_x = bx
             self.ball_y = by
             self.missing = 0
@@ -94,6 +102,12 @@ class PongGym(gym.Env):
                 self.ball_x = None
                 self.ball_y = None
                 self.intercept_y = None
+                self.intercept_right = None
+
+        # right paddle position, persisted through its redraw blinks
+        rows = np.where(obs[:, 63] == 1)[0]
+        if len(rows):
+            self.right_y = rows.mean()
         return bonus
 
     def _features(self, obs):
@@ -110,8 +124,27 @@ class PongGym(gym.Env):
         return np.array([py, self.ball_x / 64.0, self.ball_y / 32.0, dy, delta],
                         dtype=np.float32)
 
+    def _mirror_features(self, obs):
+        # the right paddle's view of the game, x-axis flipped so the
+        # left-trained policy applies unchanged
+        ry = self.right_y / 32.0 if self.right_y is not None else -1.0
+        if self.ball_x is None:
+            return np.array([ry, -1.0, -1.0, 0.0, 0.0], dtype=np.float32)
+        dy = max(-1.0, min(1.0, self.ball_dy / 4.0))
+        if self.intercept_right is not None and self.right_y is not None:
+            delta = max(-1.0, min(1.0, (self.intercept_right - self.right_y) / 16.0))
+        else:
+            delta = 0.0
+        return np.array([ry, (63.0 - self.ball_x) / 64.0, self.ball_y / 32.0, dy, delta],
+                        dtype=np.float32)
+
     def _opponent_keys(self, obs):
-        # scripted right paddle: track the ball with keys C (up) / D (down)
+        # right paddle: either the trained model on mirrored features,
+        # or the simple scripted ball-tracker (used during training)
+        if self.opponent_model is not None:
+            action, _ = self.opponent_model.predict(self._mirror_features(obs),
+                                                    deterministic=True)
+            return [set(), {0xC}, {0xD}][int(action)]
         rows = np.where(obs[:, 63] == 1)[0]
         if self.ball_y is None or not len(rows):
             return set()

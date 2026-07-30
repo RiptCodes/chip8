@@ -11,7 +11,8 @@ if os.path.exists("ai/pong_ppo.zip"):
     model = PPO.load("ai/pong_ppo")
 else:
     model = DQN.load("ai/pong_dqn")
-env = PongGym()
+# same network drives both paddles — the right side sees a mirrored world
+env = PongGym(opponent_model=model)
 
 pygame.init()
 screen = pygame.display.set_mode((64 * SCALE, 32 * SCALE))
