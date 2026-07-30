@@ -1,6 +1,6 @@
 # Attempting to make a chip 8 emulator with additional improvements and features without going over memory budget
-
 import pygame
+import random
 
 SCALE = 10
 
@@ -180,7 +180,13 @@ while running:
                         V[0xF] = 1
 
                     framebuffer[target_y][target_x] ^= bit
-                    
+
+        elif (opcode & 0xF000) == 0xC000:
+            X = (opcode & 0x0F00) >> 8
+            kk = opcode & 0x00FF
+            V[X] = random.randint(0,255) & kk
+
+
         else:
             print(f"unknown: {opcode:04x}")
 
