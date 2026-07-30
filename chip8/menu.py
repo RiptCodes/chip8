@@ -34,34 +34,35 @@ def scan_roms(folder="roms"):
     )
 
 
-def _draw_list(screen, title, entries, selected, hint):
-    screen.fill((0, 0, 0))
-    title_surf = TITLE_FONT.render(title, True, (0, 255, 65))
+def _draw_list(screen, title, entries, selected, hint, theme):
+    _, bg, fg = theme
+    dim = tuple(c * 4 // 10 for c in fg)      # 40% of foreground = dim
+
+    screen.fill(bg)
+    title_surf = TITLE_FONT.render(title, True, fg)
     screen.blit(title_surf, (screen.get_width() // 2 - title_surf.get_width() // 2, 40))
 
     y = 130
     visible = 10
     start = max(0, min(len(entries) - visible, selected - visible // 2))
     for i in range(start, min(len(entries), start + visible)):
-        color = (0, 255, 65) if i == selected else (100, 140, 100)
+        color = fg if i == selected else dim
         prefix = "> " if i == selected else "  "
         surf = ITEM_FONT.render(prefix + entries[i], True, color)
         screen.blit(surf, (screen.get_width() // 2 - 120, y))
         y += 32
 
-    hint_surf = HINT_FONT.render(hint, True, (80, 100, 80))
+    hint_surf = HINT_FONT.render(hint, True, dim)
     screen.blit(hint_surf, (screen.get_width() // 2 - hint_surf.get_width() // 2,
                              screen.get_height() - 28))
     pygame.display.flip()
 
 
-def run_main_menu(screen):
-    """Returns 'PLAY', 'SETTINGS', or None (quit)."""
+def run_main_menu(screen, settings):
     _init_fonts()
     entries = ["Play", "Settings", "Quit"]
     selected = 0
     clock = pygame.time.Clock()
-
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -79,17 +80,16 @@ def run_main_menu(screen):
                     if entries[selected] == "Quit":     return None
 
         _draw_list(screen, "CHIP-8", entries, selected,
-                   "up/down select   enter open   esc quit")
+                   "up/down select   enter open   esc quit",
+                   THEMES[settings.theme_idx])
         clock.tick(30)
 
 
-def run_rom_picker(screen, roms):
-    """Returns a ROM path, or None to go back to main menu."""
+def run_rom_picker(screen, roms, settings):
     _init_fonts()
     entries = [os.path.basename(r) for r in roms] + ["Back"]
     selected = 0
     clock = pygame.time.Clock()
-
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -107,7 +107,8 @@ def run_rom_picker(screen, roms):
                     return roms[selected]
 
         _draw_list(screen, "SELECT GAME", entries, selected,
-                   "up/down select   enter play   esc back")
+                   "up/down select   enter play   esc back",
+                   THEMES[settings.theme_idx])
         clock.tick(30)
 
 
@@ -138,19 +139,26 @@ def run_settings(screen, settings, beeper, music):
                     _, getter, setter, delta, _ = SETTING_ROWS[selected]
                     setter(settings, getter(settings) + delta)
 
-        screen.fill((0, 0, 0))
-        title = TITLE_FONT.render("SETTINGS", True, (0, 255, 65))
+        _, bg, fg = THEMES[settings.theme_idx]
+        dim = tuple(c * 4 // 10 for c in fg)
+
+        screen.fill(bg)
+        title = TITLE_FONT.render("SETTINGS", True, fg)
         screen.blit(title, (screen.get_width() // 2 - title.get_width() // 2, 40))
+
         y = 130
         for i, (label, _, _, _, fmt) in enumerate(SETTING_ROWS):
-            color = (0, 255, 65) if i == selected else (100, 140, 100)
+            color = fg if i == selected else dim
             prefix = "> " if i == selected else "  "
             value = "< {} >".format(fmt(settings)) if i == selected else fmt(settings)
             row = f"{prefix}{label:<16} {value}"
             surf = ITEM_FONT.render(row, True, color)
             screen.blit(surf, (screen.get_width() // 2 - 200, y))
             y += 34
-        hint = HINT_FONT.render("up/down select   left/right change   enter save & back", True, (80, 100, 80))
-        screen.blit(hint, (screen.get_width() // 2 - hint.get_width() // 2, screen.get_height() - 28))
+
+        hint = HINT_FONT.render("up/down select   left/right change   enter save & back",
+                                 True, dim)
+        screen.blit(hint, (screen.get_width() // 2 - hint.get_width() // 2,
+                            screen.get_height() - 28))
         pygame.display.flip()
         clock.tick(30)

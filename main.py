@@ -105,37 +105,26 @@ def main():
 
     # --- menu ↔ settings ↔ game state machine ---
     while True:
-        choice = run_main_menu(screen)
+        choice = run_main_menu(screen, settings)
 
         if choice is None:
-            break                                     # quit from main menu
+            break
 
         if choice == "SETTINGS":
             run_settings(screen, settings, beeper, music)
-            continue                                  # back to main menu
+            continue
 
         if choice == "PLAY":
-            rom_path = run_rom_picker(screen, roms)
+            rom_path = run_rom_picker(screen, roms, settings)
             if rom_path is None:
-                continue                              # user hit Back or ESC
+                continue
             chip = Chip8()
             chip.load_rom(rom_path)
             pygame.display.set_caption(f"chip8 — {os.path.basename(rom_path)}")
             if hasattr(beeper, "stop"):
                 beeper.stop()
             if not run_game(chip, screen, beeper, renderer, music, settings):
-                break 
-
-        # else: result is a ROM path
-        chip = Chip8()
-        chip.load_rom(choice)
-        pygame.display.set_caption(f"chip8 — {os.path.basename(choice)}")
-
-        if hasattr(beeper, "stop"):
-            beeper.stop()
-
-        if not run_game(chip, screen, beeper, renderer, music, settings):
-            break                              # user quit from in-game
+                break
 
     settings.save()
     pygame.quit()
