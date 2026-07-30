@@ -65,7 +65,7 @@ def run_game(chip, screen, beeper, renderer, music, settings, crt):
         # audio + render
         music.update()
         beeper.update(chip.sound_timer)
-        renderer.draw(chip.framebuffer, THEMES[settings.theme_idx])
+        renderer.draw(chip.framebuffer, THEMES[settings.theme_idx], chip.high_res)
 
         if settings.crt_enabled:
             crt.apply(screen)

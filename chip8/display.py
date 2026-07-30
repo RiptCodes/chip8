@@ -14,11 +14,18 @@ class Renderer:
     def __init__(self, screen):
         self.screen = screen
 
-    def draw(self, framebuffer, theme):
+    def draw(self, framebuffer, theme, high_res):
         _, bg, fg = theme
+        if high_res:
+            scale = SCALE // 2
+            logical_w, logical_h = 128, 64
+        else:
+            scale = SCALE
+            logical_w, logical_h = 64, 32
+
         self.screen.fill(bg)
-        for y in range(32):
-            for x in range(64):
+        for y in range(logical_h):
+            for x in range(logical_w):
                 if framebuffer[y][x]:
                     pygame.draw.rect(self.screen, fg,
-                                     (x * SCALE, y * SCALE, SCALE, SCALE))
+                                     (x * scale, y * scale, scale, scale))

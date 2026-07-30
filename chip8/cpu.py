@@ -1,7 +1,7 @@
 """CHIP-8 CPU — pure emulation, no I/O, no pygame."""
 import random
 
-from chip8.font import FONT
+from chip8.font import FONT, FONT_HIGH
 
 
 class Chip8:
@@ -11,14 +11,16 @@ class Chip8:
         self.I = 0
         self.pc = 0x200
         self.stack = []
+        self.high_res = False
         self.delay_timer = 0
         self.sound_timer = 0
         self.waiting_for_key = False
         self.waiting_register = 0
-        self.framebuffer = [[0] * 64 for _ in range(32)]
+        self.framebuffer = [[0] * 128 for _ in range(64)]
         self.keys = set()
         self.rom_path = None
         self.memory[0x50:0x50 + len(FONT)] = FONT
+        self.memory[0xA0:0xA0 + len(FONT_HIGH)] = FONT_HIGH
 
     def load_rom(self, path):
         with open(path, 'rb') as f:
@@ -47,7 +49,41 @@ class Chip8:
 
         # 00E0 — clear screen
         if opcode == 0x00E0:
-            self.framebuffer = [[0] * 64 for _ in range(32)]
+            self.framebuffer = [[0] * 128 for _ in range(64)]
+        # 00FE — set high res
+        elif opcode == 0x00FE:
+            self.high_res = False
+        # 00FF — set low res
+        elif opcode == 0x00FF:
+            self.high_res = True
+        
+        # 00Cn — scroll display down n pixels
+        elif (opcode & 0xFFF0) == 0x00C0:
+            n = opcode & 0x000F
+            _, h = (128, 64) if self.high_res else (64, 32)
+            for y in range(h - 1, -1, -1):
+                if y >= n:
+                    self.framebuffer[y] = self.framebuffer[y - n][:]
+                else:
+                    self.framebuffer[y] = [0] * len(self.framebuffer[y])
+
+        # 00FB — scroll display right 4 pixels
+        elif opcode == 0x00FB:
+            w, h = (128, 64) if self.high_res else (64, 32)
+            for y in range(h):
+                row = self.framebuffer[y]
+                self.framebuffer[y] = [0] * 4 + row[:w - 4] + row[w:]
+
+        # 00FC — scroll display left 4 pixels
+        elif opcode == 0x00FC:
+            w, h = (128, 64) if self.high_res else (64, 32)
+            for y in range(h):
+                row = self.framebuffer[y]
+                self.framebuffer[y] = row[4:w] + [0] * 4 + row[w:]
+
+        # 00FD — exit interpreter
+        elif opcode == 0x00FD:
+            raise SystemExit
 
         # 00EE — return
         elif opcode == 0x00EE:
@@ -140,25 +176,44 @@ class Chip8:
                 self.V[X] = (self.V[X] << 1) & 0xFF
                 self.V[0xF] = bit
 
-        # Dxyn — draw sprite
+        # Dxyn — draw sprite - turned into 16x16
         elif (opcode & 0xF000) == 0xD000:
             X = (opcode & 0x0F00) >> 8
             Y = (opcode & 0x00F0) >> 4
             n = opcode & 0x000F
-            sprite_x = self.V[X]
+            sprite_x = self.V[X] - 1
             sprite_y = self.V[Y]
             self.V[0xF] = 0
-            for row in range(n):
-                byte = self.memory[self.I + row]
-                for col in range(8):
-                    bit = (byte >> (7 - col)) & 1
-                    if bit == 0:
-                        continue
-                    tx = (sprite_x + col) % 64
-                    ty = (sprite_y + row) % 32
-                    if self.framebuffer[ty][tx] == 1:
-                        self.V[0xF] = 1
-                    self.framebuffer[ty][tx] ^= bit
+            w, h = (128, 64) if self.high_res else (64, 32)
+
+            if n == 0:
+                # 16×16 sprite (SCHIP)
+                for row in range(16):
+                    high = self.memory[self.I + row * 2]
+                    low  = self.memory[self.I + row * 2 + 1]
+                    row_bits = (high << 8) | low
+                    for col in range(16):
+                        bit = (row_bits >> (15 - col)) & 1
+                        if bit == 0:
+                            continue
+                        tx = (sprite_x + col) % w - 1
+                        ty = (sprite_y + row) % h
+                        if self.framebuffer[ty][tx] == 1:
+                            self.V[0xF] = 1
+                        self.framebuffer[ty][tx] ^= bit
+            else:
+                # your existing 8×n code, unchanged
+                for row in range(n):
+                    byte = self.memory[self.I + row]
+                    for col in range(8):
+                        bit = (byte >> (7 - col)) & 1
+                        if bit == 0:
+                            continue
+                        tx = (sprite_x + col) % w
+                        ty = (sprite_y + row) % h
+                        if self.framebuffer[ty][tx] == 1:
+                            self.V[0xF] = 1
+                        self.framebuffer[ty][tx] ^= bit
 
         # Cxkk — random
         elif (opcode & 0xF000) == 0xC000:
@@ -182,7 +237,7 @@ class Chip8:
             elif kk == 0x1E:
                 self.I += self.V[X]
             elif kk == 0x33:
-                self.memory[self.I]     = self.V[X] // 100
+                self.memory[self.I] = self.V[X] // 100
                 self.memory[self.I + 1] = (self.V[X] // 10) % 10
                 self.memory[self.I + 2] = self.V[X] % 10
             elif kk == 0x29:
@@ -191,6 +246,8 @@ class Chip8:
                 self.memory[self.I:self.I + X + 1] = self.V[0:X + 1]
             elif kk == 0x65:
                 self.V[0:X + 1] = self.memory[self.I:self.I + X + 1]
+            elif kk == 0x30:
+                self.I = 0xA0 + self.V[X] * 10
 
         # Ex9E — skip if key V[x] is pressed
         elif (opcode & 0xF0FF) == 0xE09E:
