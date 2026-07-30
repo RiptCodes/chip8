@@ -36,11 +36,31 @@ sound_timer = 0
 is_beeping = False
 waiting_for_key = False
 waiting_register = 0
+pause = False
 
 
 # log message
 def log(text_to_log):
     pass
+
+def reset():
+    global memory, V, I, pc, stack, delay_timer, sound_timer
+    global waiting_for_key, is_beeping, framebuffer
+    memory = bytearray(4096)
+    memory[0x50:0x50 + len(FONT)] = FONT
+    with open(rom_path, 'rb') as f:
+        rom = f.read()
+    memory[0x200:0x200 + len(rom)] = rom
+    V = bytearray(16)
+    I = 0
+    pc = 0x200
+    stack = []
+    delay_timer = 0
+    sound_timer = 0
+    waiting_for_key = False
+    is_beeping = False
+    framebuffer = [[0]*64 for _ in range(32)]
+    beep_sound.stop()
 
 # Keyboard
 KEYMAP = {
@@ -106,7 +126,8 @@ else:
     rom_path = "roms/Pong.ch8"
 with open(rom_path, 'rb') as f:
     rom = f.read()
-    memory[pc:pc + len(rom)] = rom #assigning ROM to the Memory location 0x200 - end of ROM 0xFFF
+
+memory[0x200:0x200 + len(rom)] = rom #assigning ROM to the Memory location 0x200 - end of ROM 0xFFF
 
 
 # print(memory[pc:pc+20].hex())
@@ -127,6 +148,10 @@ while running:
                 waiting_for_key = False
             if event.key == pygame.K_TAB:
                 theme_idx = (theme_idx + 1) % len(THEMES)
+            if event.key == pygame.K_p:
+                pause = not pause
+            if event.key == pygame.K_r:
+                reset()
 
     name, bg, fg = THEMES[theme_idx]
 
@@ -149,7 +174,7 @@ while running:
 
     # fetching and shifting Opcode and decoding
     for _ in range(10):
-        if waiting_for_key:
+        if pause or waiting_for_key:
             break
         opcode = memory[pc] << 8 | memory[pc + 1]
         pc += 2
