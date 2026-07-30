@@ -15,6 +15,18 @@ V = bytearray(16)
 I = 0
 pc = 0x200
 stack = []
+delay_timer = 0
+sound_timer = 0
+waiting_for_key = False
+waiting_register = 0
+
+# Keyboard
+KEYMAP = {
+    pygame.K_1: 0x1, pygame.K_2: 0x2, pygame.K_3: 0x3, pygame.K_4: 0xC,
+    pygame.K_q: 0x4, pygame.K_w: 0x5, pygame.K_e: 0x6, pygame.K_r: 0xD,
+    pygame.K_a: 0x7, pygame.K_s: 0x8, pygame.K_d: 0x9, pygame.K_f: 0xE,
+    pygame.K_z: 0xA, pygame.K_x: 0x0, pygame.K_c: 0xB, pygame.K_v: 0xF,
+}
 
 # log message
 def log(text_to_log):
@@ -38,13 +50,26 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        elif event.type == pygame.KEYDOWN:
+            if waiting_for_key and event.key in KEYMAP:
+                V[waiting_register] = KEYMAP [event.key]
+                waiting_for_key = False
 
     screen.fill("black")
 
+    if delay_timer > 0:
+        delay_timer -= 1
+    if sound_timer > 0:
+        sound_timer -= 1
+
+    keys = pygame.key.get_pressed()
+    chip8_keys = {chip8_key for pyk, chip8_key in KEYMAP.items() if keys[pyk]}
+
     # fetching and shifting Opcode and decoding
     for _ in range(10):
+        if waiting_for_key:
+            break
         opcode = memory[pc] << 8 | memory[pc + 1]
-        print(f"{opcode:04x}")
         pc += 2
         # For opcode 00E0
         if opcode == 0x00E0:
@@ -185,6 +210,29 @@ while running:
             X = (opcode & 0x0F00) >> 8
             kk = opcode & 0x00FF
             V[X] = random.randint(0,255) & kk
+
+        elif (opcode & 0xF000) == 0xF000:
+            X = (opcode & 0x0F00) >> 8
+            kk = opcode & 0x00FF
+            if kk == 0x07:
+                V[X] = delay_timer
+            elif kk == 0x15:
+                delay_timer = V[X]
+            elif kk == 0x18:
+                sound_timer = V[X]
+            elif kk == 0x0A:
+                waiting_for_key = True
+                waiting_register = X
+
+        elif (opcode & 0xF000) == 0xE09E:
+            X = (opcode & 0x0F00) >> 8
+            if V[X] in chip8_keys:
+                pc += 2
+
+        elif (opcode & 0xF000) == 0xE0A1:
+            X = (opcode & 0x0F00) >> 8
+            if V[X] not in chip8_keys:
+                pc += 2
 
 
         else:
