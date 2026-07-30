@@ -1,4 +1,3 @@
-import time
 import pygame
 
 def splash(screen, rom_name, duration_ms=2500):

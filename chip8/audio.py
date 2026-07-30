@@ -14,6 +14,12 @@ class Beeper:
 
     def update(self, sound_timer):
         if sound_timer > 0 and not self.playing:
-            self.sound.play(loops=-1); self.playing = True
+            self.sound.play(loops=-1)
+            self.playing = True
         elif sound_timer == 0 and self.playing:
-            self.sound.stop(); self.playing = False
+            self.sound.stop()
+            self.playing = False
+
+    def stop(self):
+        self.sound.stop()
+        self.playing = False

@@ -25,7 +25,8 @@ class Renderer:
 
         self.screen.fill(bg)
         for y in range(logical_h):
+            row = framebuffer[y]
             for x in range(logical_w):
-                if framebuffer[y][x]:
+                if row[x]:
                     pygame.draw.rect(self.screen, fg,
                                      (x * scale, y * scale, scale, scale))

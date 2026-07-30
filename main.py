@@ -35,8 +35,7 @@ def run_game(chip, screen, beeper, renderer, music, settings, crt):
                     paused = not paused
                 elif event.key == pygame.K_r:
                     chip.reset()
-                    if hasattr(beeper, "stop"):
-                        beeper.stop()
+                    beeper.stop()
                 elif event.key == pygame.K_m:
                     music.toggle()
                 elif event.key == pygame.K_n:
@@ -128,8 +127,7 @@ def main():
             chip = Chip8()
             chip.load_rom(rom_path)
             pygame.display.set_caption(f"chip8 — {os.path.basename(rom_path)}")
-            if hasattr(beeper, "stop"):
-                beeper.stop()
+            beeper.stop()
             if not run_game(chip, screen, beeper, renderer, music, settings, crt):
                 break
 
