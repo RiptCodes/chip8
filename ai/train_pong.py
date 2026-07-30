@@ -17,7 +17,9 @@ import sys
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
-from stable_baselines3 import DQN
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from chip8.env import Chip8Env
 from ai.pong_reward import find_positions
@@ -56,8 +58,11 @@ class PongGym(gym.Env):
 
         if bx is not None:
             if self.ball_x is not None and self.missing < GONE_FRAMES:
-                dx = bx - self.ball_x
-                dy = by - self.ball_y
+                # normalise by frames elapsed — a blink gap otherwise doubles
+                # the measured velocity and throws the intercept off
+                frames = self.missing + 1
+                dx = (bx - self.ball_x) / frames
+                dy = (by - self.ball_y) / frames
                 # bounce off our paddle: direction flips near the left edge
                 if self.ball_dx < 0 and dx > 0 and bx < 10:
                     bonus = 5.0
@@ -84,6 +89,8 @@ class PongGym(gym.Env):
                 # ball stayed gone: a point was scored on whichever side it exited
                 if self.ball_dx < 0 and self.ball_x < 12:
                     bonus = -10.0
+                elif self.ball_dx > 0 and self.ball_x > 52:
+                    bonus = 5.0        # we beat the opponent
                 self.ball_x = None
                 self.ball_y = None
                 self.intercept_y = None
@@ -109,9 +116,9 @@ class PongGym(gym.Env):
         if self.ball_y is None or not len(rows):
             return set()
         right_y = rows.mean()
-        if right_y > self.ball_y + 1:
+        if right_y > self.ball_y + 0.5:
             return {0xC}
-        if right_y < self.ball_y - 1:
+        if right_y < self.ball_y - 0.5:
             return {0xD}
         return set()
 
@@ -156,12 +163,12 @@ class PongGym(gym.Env):
 
 
 if __name__ == "__main__":
-    steps = int(sys.argv[1]) if len(sys.argv) > 1 else 1_000_000
-    env = PongGym()
-    model = DQN("MlpPolicy", env, verbose=1,
-                learning_rate=5e-4, buffer_size=100_000,
-                exploration_fraction=0.2,
+    steps = int(sys.argv[1]) if len(sys.argv) > 1 else 3_000_000
+    env = make_vec_env(PongGym, n_envs=8, vec_env_cls=SubprocVecEnv)
+    model = PPO("MlpPolicy", env, verbose=1,
+                learning_rate=3e-4, n_steps=512, batch_size=1024,
+                ent_coef=0.01,
                 policy_kwargs={"net_arch": [128, 128]})
     model.learn(total_timesteps=steps)
-    model.save("ai/pong_dqn")
-    print("saved to ai/pong_dqn.zip")
+    model.save("ai/pong_ppo")
+    print("saved to ai/pong_ppo.zip")

@@ -1,11 +1,16 @@
 """Watch the trained agent play Pong in the real emulator window."""
+import os
+
 import pygame
-from stable_baselines3 import DQN
+from stable_baselines3 import DQN, PPO
 
 from ai.train_pong import PongGym
 from chip8.display import Renderer, THEMES, SCALE
 
-model = DQN.load("ai/pong_dqn")
+if os.path.exists("ai/pong_ppo.zip"):
+    model = PPO.load("ai/pong_ppo")
+else:
+    model = DQN.load("ai/pong_dqn")
 env = PongGym()
 
 pygame.init()
