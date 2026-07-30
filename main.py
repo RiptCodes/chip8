@@ -20,6 +20,10 @@ sound_timer = 0
 waiting_for_key = False
 waiting_register = 0
 
+# log message
+def log(text_to_log):
+    pass
+
 # Keyboard
 KEYMAP = {
     pygame.K_1: 0x1, pygame.K_2: 0x2, pygame.K_3: 0x3, pygame.K_4: 0xC,
@@ -28,12 +32,49 @@ KEYMAP = {
     pygame.K_z: 0xA, pygame.K_x: 0x0, pygame.K_c: 0xB, pygame.K_v: 0xF,
 }
 
-# log message
-def log(text_to_log):
-    pass
+# Fonts
+FONT = bytes([
+    # 0
+    0xF0, 0x90, 0x90, 0x90, 0xF0,
+    # 1
+    0x20, 0x60, 0x20, 0x20, 0x70,
+    # 2
+    0xF0, 0x10, 0xF0, 0x80, 0xF0,
+    # 3
+    0xF0, 0x10, 0xF0, 0x10, 0xF0,
+    # 4
+    0x90, 0x90, 0xF0, 0x10, 0x10,
+    # 5
+    0xF0, 0x80, 0xF0, 0x10, 0xF0,
+    # 6
+    0xF0, 0x80, 0xF0, 0x90, 0xF0,
+    # 7
+    0xF0, 0x10, 0x20, 0x40, 0x40,
+    # 8
+    0xF0, 0x90, 0xF0, 0x90, 0xF0,
+    # 9
+    0xF0, 0x90, 0xF0, 0x10, 0xF0,
+    # A
+    0xF0, 0x90, 0xF0, 0x90, 0x90,
+    # B
+    0xE0, 0x90, 0xE0, 0x90, 0xE0,
+    # C
+    0xF0, 0x80, 0x80, 0x80, 0xF0,
+    # D
+    0xE0, 0x90, 0x90, 0x90, 0xE0,
+    # E
+    0xF0, 0x80, 0xF0, 0x80, 0xF0,
+    # F
+    0xF0, 0x80, 0xF0, 0x80, 0x80,
+])
+
+
+
+# loading Fonts
+memory[0x50:0x50 + len(FONT)] = FONT
 
 # ROM Load
-with open("roms/IBM Logo.ch8", 'rb') as f:
+with open("roms/Keypad.ch8", 'rb') as f:
     rom = f.read()
     memory[pc:pc + len(rom)] = rom #assigning ROM to the Memory location 0x200 - end of ROM 0xFFF
 
@@ -223,13 +264,28 @@ while running:
             elif kk == 0x0A:
                 waiting_for_key = True
                 waiting_register = X
+            elif kk == 0x1E:
+                I += V[X]
+            elif kk == 0x33:
+                hundreds = V[X] // 100
+                tens = (V[X] // 10) % 10
+                units = V[X] % 10
+                memory[I] = hundreds
+                memory[I + 1] = tens
+                memory[I + 2] = units
+            elif kk == 0x29:
+                I = 0x50 + V[X] * 5
+            elif kk == 0x55:
+                memory[I:I + X + 1] = V[0:X + 1]
+            elif kk == 0x65:
+                V[0:X + 1] = memory[I:I + X + 1]
 
-        elif (opcode & 0xF000) == 0xE09E:
+        elif (opcode & 0xF0FF) == 0xE09E:
             X = (opcode & 0x0F00) >> 8
             if V[X] in chip8_keys:
                 pc += 2
 
-        elif (opcode & 0xF000) == 0xE0A1:
+        elif (opcode & 0xF0FF) == 0xE0A1:
             X = (opcode & 0x0F00) >> 8
             if V[X] not in chip8_keys:
                 pc += 2
