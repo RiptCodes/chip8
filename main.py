@@ -1,8 +1,7 @@
-# Attempting to make a chip 8 emulator with additional improvements and features without going over memory budget
-"""CHIP-8 emulator"""
+"""CHIP-8 emulator — frontend with menu → game state machine."""
 import sys
-import pygame
 import os
+import pygame
 
 from chip8.cpu import Chip8
 from chip8.audio import Beeper
@@ -10,59 +9,43 @@ from chip8.display import Renderer, THEMES, SCALE
 from chip8.input import KEYMAP
 from chip8.music import MusicPlayer
 from chip8.intro import splash
+from chip8.menu import scan_roms, run_main_menu, run_rom_picker, run_settings
+from chip8.settings import Settings
 
-CYCLES_PER_FRAME = 10
-DEFAULT_ROM = "roms/Pong.ch8"
 
-
-def main():
-    # --- pygame setup ---
-    pygame.mixer.pre_init(frequency=22050, size=-16, channels=1, buffer=512)
-    pygame.init()
-    screen = pygame.display.set_mode((64 * SCALE, 32 * SCALE))
-    
+def run_game(chip, screen, beeper, renderer, music, settings):
+    """Run one ROM. Returns True to go back to menu, False to quit entirely."""
+    paused = False
     clock = pygame.time.Clock()
 
-    # --- components ---
-    chip = Chip8()
-    chip.load_rom(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_ROM)
-    beeper = Beeper()
-    renderer = Renderer(screen)
-    music = MusicPlayer(folder="music", volume=0.2)
-
-    if not splash(screen, os.path.basename(chip.rom_path)):
-        pygame.quit()
-        sys.exit()
-
-    # --- UI state (lives in main, not the CPU) ---
-    theme_idx = 0
-    paused = False
-
-    pygame.display.set_caption(f"chip8 — {chip.rom_path}")
-
-    running = True
-    while running:
-        # events
+    while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                return False
             elif event.type == pygame.KEYDOWN:
-                # wait-for-key resolution
+                if event.key == pygame.K_ESCAPE:
+                    return True   # back to menu
                 if chip.waiting_for_key and event.key in KEYMAP:
                     chip.V[chip.waiting_register] = KEYMAP[event.key]
                     chip.waiting_for_key = False
-                # UI shortcuts
                 if event.key == pygame.K_TAB:
-                    theme_idx = (theme_idx + 1) % len(THEMES)
+                    settings.theme_idx = (settings.theme_idx + 1) % len(THEMES)
                 elif event.key == pygame.K_p:
                     paused = not paused
                 elif event.key == pygame.K_r:
                     chip.reset()
-                    beeper.stop() if hasattr(beeper, "stop") else None
+                    if hasattr(beeper, "stop"):
+                        beeper.stop()
+                elif event.key == pygame.K_m:
+                    music.toggle()
+                elif event.key == pygame.K_n:
+                    music.next()
                 elif event.key == pygame.K_LEFTBRACKET:
-                    music.set_volume(music.volume - 0.1)
+                    settings.music_volume = max(0.0, settings.music_volume - 0.1)
+                    music.set_volume(settings.music_volume)
                 elif event.key == pygame.K_RIGHTBRACKET:
-                    music.set_volume(music.volume + 0.1)
+                    settings.music_volume = min(1.0, settings.music_volume + 0.1)
+                    music.set_volume(settings.music_volume)
 
         # feed current keypad state into the CPU
         keys = pygame.key.get_pressed()
@@ -71,7 +54,7 @@ def main():
         # tick timers + step CPU
         chip.tick_timers()
         if not paused:
-            for _ in range(CYCLES_PER_FRAME):
+            for _ in range(settings.cycles_per_frame):
                 if chip.waiting_for_key:
                     break
                 chip.step()
@@ -79,11 +62,82 @@ def main():
         # audio + render
         music.update()
         beeper.update(chip.sound_timer)
-        renderer.draw(chip.framebuffer, THEMES[theme_idx])
+        renderer.draw(chip.framebuffer, THEMES[settings.theme_idx])
 
         pygame.display.flip()
         clock.tick(60)
 
+
+def main():
+    # --- pygame setup ---
+    pygame.mixer.pre_init(frequency=22050, size=-16, channels=1, buffer=512)
+    pygame.init()
+    screen = pygame.display.set_mode((64 * SCALE, 32 * SCALE))
+
+    # --- settings + shared components ---
+    settings = Settings.load()
+    beeper = Beeper()
+    beeper.sound.set_volume(settings.beep_volume)
+    renderer = Renderer(screen)
+    music = MusicPlayer(folder="music", volume=settings.music_volume)
+
+    roms = scan_roms("roms")
+    if not roms:
+        print("No ROMs found in roms/ folder.")
+        pygame.quit()
+        sys.exit(1)
+
+    # --- optional shortcut: python main.py roms/pong.ch8 → skip menu ---
+    if len(sys.argv) > 1:
+        chip = Chip8()
+        chip.load_rom(sys.argv[1])
+        splash(screen, os.path.basename(chip.rom_path))
+        pygame.display.set_caption(f"chip8 — {os.path.basename(chip.rom_path)}")
+        run_game(chip, screen, beeper, renderer, music, settings)
+        settings.save()
+        pygame.quit()
+        return
+
+    # --- splash once at startup ---
+    if not splash(screen, "menu"):
+        pygame.quit()
+        return
+
+    # --- menu ↔ settings ↔ game state machine ---
+    while True:
+        choice = run_main_menu(screen)
+
+        if choice is None:
+            break                                     # quit from main menu
+
+        if choice == "SETTINGS":
+            run_settings(screen, settings, beeper, music)
+            continue                                  # back to main menu
+
+        if choice == "PLAY":
+            rom_path = run_rom_picker(screen, roms)
+            if rom_path is None:
+                continue                              # user hit Back or ESC
+            chip = Chip8()
+            chip.load_rom(rom_path)
+            pygame.display.set_caption(f"chip8 — {os.path.basename(rom_path)}")
+            if hasattr(beeper, "stop"):
+                beeper.stop()
+            if not run_game(chip, screen, beeper, renderer, music, settings):
+                break 
+
+        # else: result is a ROM path
+        chip = Chip8()
+        chip.load_rom(choice)
+        pygame.display.set_caption(f"chip8 — {os.path.basename(choice)}")
+
+        if hasattr(beeper, "stop"):
+            beeper.stop()
+
+        if not run_game(chip, screen, beeper, renderer, music, settings):
+            break                              # user quit from in-game
+
+    settings.save()
     pygame.quit()
 
 
