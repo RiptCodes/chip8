@@ -15,14 +15,14 @@ import numpy as np
 
 from ai.snake_env import SnakeEnv
 
-LAYERS = (8, 14, 3)          # 8 screen features -> straight/left/right
+LAYERS = (14, 18, 10, 3)     # v2: 8 rays + cyclic food + length/stale
 POPULATION = 120
 GAMES_PER_BRAIN = 2
 ELITE = 12
 TOURNAMENT = 4
 MUTATION_RATE = 0.1
 MUTATION_SCALE = 0.4
-MAX_MOVES = 3000
+MAX_MOVES = 20000
 STALL_LIMIT = 250   # stop only after this many generations with no new record
 
 
@@ -52,18 +52,22 @@ def play(genome):
     while not done:
         action = int(np.argmax(forward(genome, state)))
         state, _, done, info = env.step(action)
-    return max(env.best_life, info["length"]), env.moves
+    return max(env.best_life, info["length"]), env.moves, info.get("won", False)
 
 
 def evaluate(genome):
     total = 0.0
     best = 0
     for _ in range(GAMES_PER_BRAIN):
-        length, moves = play(genome)
-        # length dominates; the move penalty makes fast eating beat loitering.
-        # (+ moves used to be a survival tiebreak, but it paid snakes to
-        # circle the apple farming step count)
-        total += length * 1000 - moves * 0.2
+        length, moves, won = play(genome)
+        # length dominates. early survival earns a little (so a fresh random
+        # population has a gradient to climb) but it caps at 400 moves, and
+        # past that loitering costs, so circling never pays. winning is
+        # the jackpot
+        total += length * 1000 + min(moves, 400) - moves * 0.2
+        if won:
+            total += 100_000
+            best = max(best, 250)
         best = max(best, length)
     return total / GAMES_PER_BRAIN, best
 

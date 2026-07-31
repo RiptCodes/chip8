@@ -76,6 +76,7 @@ class SnakeEnv:
         self.stale = 0
         self.best_life = 0
         self.game_over = False
+        self.victory = False
         self.heading = UP
         self._len_hist = deque(maxlen=4)
         self._read()
@@ -87,13 +88,18 @@ class SnakeEnv:
         if extra is not None:
             pts |= extra
         pts = list(pts)
-        # the game-over screen is a wall of text; nothing else lights up
-        # this many pixels, so it is the cleanest death signal available
-        self.game_over = len(pts) > 60
-        if self.game_over:
+        # victory screen = a solid fill, far more pixels than any snake can be
+        self.victory = len(pts) > 1500
+        if self.victory:
             return
         blobs = clusters(pts)
         if not blobs:
+            return
+        # in play the screen is one body blob plus a food pixel; the game-over
+        # screen is text, which fragments into many letter blobs. counting
+        # blobs tells them apart no matter how long the snake gets
+        self.game_over = len(blobs) >= 8
+        if self.game_over:
             return
         blobs.sort(key=len, reverse=True)
         body = blobs[0]
@@ -142,15 +148,23 @@ class SnakeEnv:
         self._read(extra=mid)
         self.moves += 1
 
+        if self.victory:
+            return self.features(), 200.0, True, {"length": prev_len, "died": False, "won": True}
+
         died = self.game_over or (prev_len > 7 and self.length <= prev_len - 3)
         if died:
-            return self.features(), -10.0, True, {"length": prev_len, "died": True}
+            return self.features(), -10.0, True, {"length": prev_len, "died": True, "won": False}
 
         grew = self.length > prev_len
         reward = 5.0 if grew else 0.0
         if grew:
             self.best_life = max(self.best_life, self.length)
             self.stale = 0
+            # the eaten apple is gone; its replacement may have spawned
+            # against the body where the cluster detector cannot see it yet.
+            # chasing the old position is chasing a ghost
+            self.food = None
+            self.food_age = 99
         else:
             self.stale += 1
             # closing on the food is worth a little, drifting away costs a little
@@ -160,7 +174,7 @@ class SnakeEnv:
                 reward += 0.1 if after < before else -0.1
 
         done = self.moves >= self.max_moves or self.stale > 100
-        return self.features(), reward, done, {"length": self.length, "died": False}
+        return self.features(), reward, done, {"length": self.length, "died": False, "won": False}
 
     @staticmethod
     def _dist(a, b):
@@ -169,40 +183,50 @@ class SnakeEnv:
         return dy + dx
 
     def features(self):
-        if not self.head or not self.food:
-            return np.zeros(8, dtype=np.float32)
+        """v2 senses: 8 body-distance rays in the snake's frame, plus the food
+        offset cyclically encoded (sin/cos) so nothing jumps at the wrap seam."""
+        if not self.head:
+            return np.zeros(14, dtype=np.float32)
         hy, hx = self.head
-        fy, fx = self.food
-        dy = ((fy - hy + H // 2) % H) - H // 2
-        dx = ((fx - hx + W // 2) % W) - W // 2
-        def ray(heading):
-            """Free cells ahead before running into our own body."""
-            sy, sx = STEP[heading]
+        food_known = self.food is not None
+        fy, fx = self.food if food_known else (hy, hx)
+
+        def ray(dy, dx):
             y, x, dist = hy, hx, 0
             for _ in range(20):
-                y, x = (y + sy) % H, (x + sx) % W
+                y, x = (y + dy) % H, (x + dx) % W
                 if (y, x) in self.body:
                     return dist
                 dist += 1
             return 20
 
-        straight = self.heading
-        left = (self.heading - 1) % 4
-        right = (self.heading + 1) % 4
+        # 8 directions rotated into the snake's frame: F, FR, R, BR, B, BL, L, FL
+        sy, sx = STEP[self.heading]
+        ly, lx = STEP[(self.heading - 1) % 4]
+        dirs = []
+        for f_c, l_c in ((1,0),(1,-1),(0,-1),(-1,-1),(-1,0),(-1,1),(0,1),(1,1)):
+            dirs.append((f_c * sy + l_c * ly, f_c * sx + l_c * lx))
+        rays = [ray(dy, dx) / 20.0 for dy, dx in dirs]
 
-        # rotate the food vector into the snake's frame
-        sy, sx = STEP[straight]
-        ly, lx = STEP[left]
-        fwd = dy * sy + dx * sx
-        lat = dy * ly + dx * lx
-
-        return np.array([
-            1.0 if ray(straight) == 0 else 0.0,
-            1.0 if ray(left) == 0 else 0.0,
-            1.0 if ray(right) == 0 else 0.0,
-            ray(straight) / 20.0,
-            ray(left) / 20.0,
-            ray(right) / 20.0,
-            fwd / 32.0,
-            lat / 32.0,
-        ], dtype=np.float32)
+        # food offset in the snake's frame, then cyclic-encoded. the wrap
+        # period of each axis depends on which way we face
+        gy = fy - hy
+        gx = fx - hx
+        fwd = gy * sy + gx * sx
+        lat = gy * ly + gx * lx
+        p_fwd = H if sy else W
+        p_lat = H if ly else W
+        import math
+        af = 2 * math.pi * fwd / p_fwd
+        al = 2 * math.pi * lat / p_lat
+        if not food_known:
+            # rays stay live so it can still avoid itself while searching
+            return np.array(rays + [0.0, 0.0, 0.0, 0.0,
+                                    len(self.body) / 200.0,
+                                    self.stale / 100.0],
+                            dtype=np.float32)
+        return np.array(rays + [math.sin(af), math.cos(af),
+                                math.sin(al), math.cos(al),
+                                len(self.body) / 200.0,
+                                self.stale / 100.0],
+                        dtype=np.float32)
